@@ -1,0 +1,14 @@
+{
+  "active": "shuxue1",
+  "books": [
+    {
+      "id": "shuxue1",
+      "title": "示例课本（替换为你的课本）",
+      "pdf": "books/shuxue1/textbook.pdf",
+      "index": "books/shuxue1/index.json",
+      "problems": "books/shuxue1/problems.json",
+      "exams": "books/shuxue1/exam-points.json",
+      "color": "#4f7cff"
+    }
+  ]
+}

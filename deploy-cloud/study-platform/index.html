@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>课本学习交互平台 v55</title>
+  <link rel="stylesheet" href="styles.css?v=46" />
+  <!-- MathJax 配置（先设好，tex-svg.js 改为按需懒加载，避免首屏硬塞 2.1MB） -->
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+      svg: { fontCache: 'none' }
+    };
+  </script>
+</head>
+<body>
+  <div id="globalError" class="global-error hidden" title="初始化出错，复制这段文字给开发"></div>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">📚</span>
+      <div>
+        <div class="brand-title">课本学习交互平台</div>
+        <div class="brand-sub" id="bookName">未加载课本</div>
+      </div>
+    </div>
+
+    <div class="nav">
+      <button id="tabProblems" class="active">题解</button>
+      <button id="tabExams">考点</button>
+      <button id="tabWeak">薄弱点</button>
+      <button id="tabChat">答疑</button>
+      <button id="tabReport">周报</button>
+      <button id="tabNotes">笔记</button>
+      <button id="tabDaily">每日一题</button>
+    </div>
+
+    <div class="search">
+      <input id="searchInput" type="text" placeholder="定位已入库的题（P127 第5题）/ 搜课本（泰勒、第3章）" />
+      <button id="searchBtn">定位</button>
+    </div>
+    <div class="progress-summary" id="progressSummary">已学会 0 · 错题 0 · 连续 0 天</div>
+    <div class="topbar-actions">
+      <select id="bookSelect" class="book-select" title="切换课本"></select>
+      <button id="addBookBtn" class="ghost" title="添加书籍（上传 PDF）">＋课本</button>
+      <button id="loadPdfBtn" class="ghost">载入课本PDF</button>
+      <button id="topSettingsBtn" class="ghost" title="对话 API 设置">⚙</button>
+      <button id="dataBtn" class="ghost" title="导出 / 导入全部数据（迁移或备份）">💾 数据</button>
+      <button id="helpBtn" class="ghost">?</button>
+    </div>
+    <input id="pdfFile" type="file" accept="application/pdf" hidden />
+  </header>
+
+  <!-- 题目视图 -->
+  <div id="mainView">
+    <main class="layout">
+      <section class="pdf-pane">
+        <div class="pdf-toolbar">
+          <button id="prevPage" class="ghost">‹</button>
+          <span id="pageInfo">— / —</span>
+          <button id="nextPage" class="ghost">›</button>
+          <span class="pdf-divider"></span>
+          <input id="jumpPageInput" type="number" min="1" placeholder="页码" title="输入页码按回车跳转" class="jump-page-input" />
+          <span class="pdf-hint">把 PDF 拖到此处，或点右上「载入课本PDF」</span>
+        </div>
+        <div id="pdfDrop" class="pdf-canvas-wrap">
+          <canvas id="pdfCanvas"></canvas>
+          <div id="pdfPlaceholder" class="pdf-placeholder">
+            <div class="big">📄</div>
+            <p>还没载入课本 PDF</p>
+            <p class="muted">载入后这里显示书页，右侧题目与书页联动。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="side-pane">
+        <div class="encourage" id="encourage"></div>
+        <div id="listView" class="list-view">
+          <div class="pane-head">
+            <h2>题目列表</h2>
+            <div class="filters">
+              <button class="chip active" data-filter="all">全部</button>
+              <button class="chip" data-filter="unstudied">未学</button>
+              <button class="chip" data-filter="wrong">错题</button>
+              <button class="chip" data-filter="mastered">已掌握</button>
+            </div>
+          </div>
+          <div id="problemList" class="problem-list"></div>
+        </div>
+
+        <div id="detailView" class="detail-view hidden">
+          <button id="backBtn" class="ghost back">‹ 返回列表</button>
+          <div id="detailContent"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- 考点视图 -->
+  <div id="examView" class="hidden exam-view">
+    <div class="encourage">📝 <b>考点</b>：把考卷发给 LearnBuddy，它会读卷并沉淀考点总结到这里，可随时回看、对比。</div>
+    <div class="exam-head">
+      <h2>考卷考点总结</h2>
+      <span class="muted" id="examCount"></span>
+      <button id="addExamBtn" class="primary" style="margin-left:auto">＋ 添加考卷</button>
+    </div>
+    <div id="examList" class="exam-list"></div>
+    <div id="examDetail" class="exam-detail hidden"></div>
+  </div>
+
+  <!-- 薄弱点图谱视图 -->
+  <div id="weakView" class="hidden weak-view">
+    <div class="encourage">🧭 <b>薄弱点图谱 v2</b>：把错题按「错误类型 + 教材知识点」两层归因，系统自动聚合成<b>三级教材树图谱</b>并按掌握度着色；可进入<b>重做回路</b>巩固。在「题解」里点「✗ 加入错题」即可归因。</div>
+    <div class="weak-head">
+      <h2>个人薄弱点图谱</h2>
+      <span class="muted" id="weakCount"></span>
+      <span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+        <button id="importTreeBtn" class="ghost" title="从本书考点表一次性生成三级树">📥 从考点表导入</button>
+        <button id="exportAttrJson" class="ghost">导出 JSON</button>
+        <button id="exportAttrCsv" class="ghost">导出 CSV</button>
+        <button id="exportAttrMd" class="ghost">📄 报告</button>
+      </span>
+    </div>
+    <div class="weak-stats" id="weakStats"></div>
+    <div class="weak-cols">
+      <div class="weak-col">
+        <div class="weak-col-head">📚 三级教材树（章 / 节 / 知识点）</div>
+        <div class="tree-tools">
+          <button id="addChapterBtn" class="ghost">＋ 添加章</button>
+        </div>
+        <div id="treeBox" class="tree-box"></div>
+      </div>
+      <div class="weak-col">
+        <div class="weak-col-head">🔁 重做回路（待巩固）</div>
+        <div id="redoBox" class="redo-box"></div>
+      </div>
+    </div>
+    <div class="weak-col-head" style="margin-top:14px">📊 按知识点聚合的薄弱项</div>
+    <div id="weakList" class="weak-list"></div>
+  </div>
+
+  <!-- 对话答疑视图：左会话列表 + 右当前对话 -->
+  <div id="chatView" class="hidden chat-view">
+    <aside class="chat-sidebar">
+      <div class="chat-sidebar-head">
+        <button id="newChatBtn" class="primary">＋ 新对话</button>
+      </div>
+      <div class="role-avatars" id="roleAvatars">
+        <div class="ra-title">当前角色</div>
+        <div class="ra-list">
+          <button class="ra-item" data-role="lecturer" type="button" title="讲解员：直接讲定理、公式与推导">
+            <span class="ra-face">📖</span>
+            <span class="ra-label">讲解员</span>
+          </button>
+          <button class="ra-item" data-role="coach" type="button" title="教练：苏格拉底式引导，说「给我答案」可直给">
+            <span class="ra-face">🎯</span>
+            <span class="ra-label">教练</span>
+          </button>
+          <button class="ra-item" data-role="examiner" type="button" title="考官：出同类变式题检验掌握程度">
+            <span class="ra-face">📝</span>
+            <span class="ra-label">考官</span>
+          </button>
+          <button class="ra-item" data-role="analyst" type="button" title="分析师：复盘错因与薄弱点，补全知识漏洞">
+            <span class="ra-face">🔍</span>
+            <span class="ra-label">分析师</span>
+          </button>
+        </div>
+        <div class="ra-hint" id="roleHint">讲解员：直接讲定理、公式与推导。</div>
+      </div>
+      <div id="chatSessions" class="chat-sessions"></div>
+    </aside>
+    <section class="chat-main">
+      <div class="chat-head">
+        <div>
+          <h2>答疑</h2>
+          <div class="chat-sub" id="chatSub">浏览器直连你的大模型 · 载入 PDF 后，P页码 提问会附带书页图像（绕过 OCR 噪声）</div>
+        </div>
+        <div class="chat-head-actions">
+          <button id="discToggle" class="ghost" title="开启后由 主讲员/质疑官/诊断师/总结师 多角色联动研讨（谁有观点谁发言，不强制轮流）；关闭回到单人角色答疑">🗣 研讨模式</button>
+          <select id="discIntensity" class="cfg-input disc-intensity hidden" title="研讨深度">
+            <option value="light">轻度（短研讨）</option>
+            <option value="deep">深度（充分研讨）</option>
+          </select>
+          <button id="chatClear" class="ghost">清空</button>
+          <button id="chatSettingsBtn" class="ghost">⚙ 设置</button>
+        </div>
+      </div>
+      <div id="discBanner" class="disc-banner hidden">
+        🗣 <b>研讨模式</b>：多角色联动研讨 — 📖 主讲员 讲解 → 🤔 质疑官 诘问 → 🔍 诊断师 标记错因 → 💡 总结师 提炼。不强制轮流、谁有观点谁发言；可 <code>@主讲员</code> / <code>@质疑官</code> / <code>@诊断师</code> / <code>@总结师</code> 单点追问。
+      </div>
+      <div id="examQaBanner" class="exam-qa-banner hidden"></div>
+      <div id="chatKeyHint" class="chat-key-hint hidden"></div>
+      <div class="chat-log" id="chatLog">
+        <div id="chatEmpty" class="chat-empty">
+          <div class="big">💬</div>
+          <p>直接问我吧，例如：</p>
+          <p>· P127 第5题不会<br/>· 帮我讲讲泰勒公式<br/>· 这道极限怎么求</p>
+          <p class="muted">说「P页码」会自动把对应 PDF 页截图发给模型（先载入 PDF 即可）；也可直接粘贴题目截图，让连小理看图解答。</p>
+        </div>
+      </div>
+      <div class="chat-input">
+        <div id="chatAttach" class="chat-attach"></div>
+        <div class="chat-input-wrap">
+          <textarea id="chatInput" rows="2" placeholder="直接说，如：P127 第5题不会 / 帮我讲讲泰勒公式；也可贴或传截图直接问"></textarea>
+          <button id="chatAttachBtn" class="attach-btn" title="传图片（截图/拍照问，比 OCR 更靠谱）" type="button">📎</button>
+          <input id="chatFileInput" type="file" accept="image/*" multiple hidden />
+        </div>
+        <button id="chatSend" class="primary">发送</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- 周报视图：跨会话长期记忆驱动 -->
+  <div id="reportView" class="hidden report-view">
+    <div class="encourage">📊 <b>数分学习周报</b>：连小理基于你在本机保存的<b>全部答疑会话、错题归因、学习进度</b>（跨会话长期记忆）自动汇总。这是纯静态站点也能做到的「长期记忆」独有能力。</div>
+    <div class="report-head">
+      <h2>数分学习周报</h2>
+      <div class="report-head-actions">
+        <select id="reportRange" class="cfg-input" style="width:auto;padding:7px 10px">
+          <option value="7">近 7 天</option>
+          <option value="30">近 30 天</option>
+          <option value="0">全部</option>
+        </select>
+        <button id="genReportBtn" class="primary">✨ 生成周报</button>
+        <button id="exportReportBtn" class="ghost">导出 .md</button>
+      </div>
+    </div>
+    <div id="reportContent" class="report-content">
+      <div class="empty"><div class="big">📊</div>
+        <p>点「生成周报」，连小理会基于你的长期学习记忆汇总本周进展。</p>
+        <p class="muted">需要先在「⚙ 设置」里填好 API Key（让连小理来写周报）；没有 Key 也能生成一份纯数据版周报。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 上课笔记视图 -->
+  <div id="notesView" class="hidden notes-view">
+    <div class="encourage">📝 <b>上课笔记</b>：自己添加老师的教案、板书、课堂照片，<b>按科目（当前课本）分开保存</b>，和题目/答疑数据一起存在本机浏览器，不上传服务器。切换上方课本即可查看对应科目的笔记。</div>
+    <div class="notes-wrap">
+      <aside class="notes-list-pane">
+        <div class="notes-list-head">
+          <div class="notes-head-text">
+            <h2>我的笔记</h2>
+            <span class="notes-subject" id="notesSubject"></span>
+          </div>
+          <button id="newNoteBtn" class="primary" type="button">＋ 新建</button>
+        </div>
+        <div class="notes-search"><input id="notesSearch" class="cfg-input" type="search" placeholder="搜索笔记标题 / 内容…" /></div>
+        <div id="notesList" class="notes-list"></div>
+      </aside>
+      <section class="notes-editor-pane">
+        <div class="notes-editor-head">
+          <input id="noteTitle" class="cfg-input" type="text" placeholder="标题，如：第3章 极限 - 教案" />
+          <div class="notes-editor-actions">
+            <button id="noteEditBtn" class="ghost active" type="button">编辑</button>
+            <button id="notePreviewBtn" class="ghost" type="button">预览</button>
+            <button id="deleteNoteBtn" class="ghost danger" type="button">删除</button>
+            <button id="saveNoteBtn" class="primary" type="button">保存</button>
+          </div>
+        </div>
+        <textarea id="noteContent" class="cfg-input notes-content" placeholder="记录老师讲的重点、板书、例题..."></textarea>
+        <div id="notePreview" class="cfg-input notes-preview hidden"></div>
+        <div class="notes-images-head">
+          <span class="notes-images-title">课堂照片 / 板书 / 老师课件</span>
+          <button id="addNoteImageBtn" class="ghost" type="button">📎 添加附件</button>
+          <input type="file" id="noteImageInput" accept="image/*,application/pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx" multiple hidden />
+        </div>
+        <div id="noteImages" class="notes-images"></div>
+        <p class="notes-hint muted">提示：可直接把图片粘贴到页面（Ctrl+V）；也可点「📎 添加附件」加入老师的 PPT / PDF / 板书截图。图片自动压缩；PPT/PDF 可点缩略图全屏放大查看或下载。点图片可滚轮缩放、拖拽平移。</p>
+      </section>
+    </div>
+
+    <!-- 附件全屏放大查看 -->
+    <div id="noteLightbox" class="lightbox hidden">
+      <div class="lb-bar">
+        <span class="lb-name" id="lbName"></span>
+        <span class="lb-zoom" id="lbZoom">100%</span>
+        <button id="lbZoomOut" class="lb-btn" type="button" title="缩小">－</button>
+        <button id="lbZoomIn" class="lb-btn" type="button" title="放大">＋</button>
+        <button id="lbFit" class="lb-btn" type="button" title="适应屏幕">⤢</button>
+        <a id="lbDownload" class="lb-btn lb-download" title="下载 / 打开">⬇ 下载</a>
+        <button id="lbClose" class="lb-btn lb-close" type="button" title="关闭">✕</button>
+      </div>
+      <div class="lb-stage" id="lbStage">
+        <img id="lbImg" class="lb-img hidden" alt="附件预览" />
+        <iframe id="lbFrame" class="lb-frame hidden"></iframe>
+        <div id="lbMsg" class="lb-msg hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 每日一题视图 -->
+  <div id="dailyView" class="hidden daily-view">
+    <div class="encourage">📅 <b>每日一题</b>：连小理根据你最近的<b>薄弱点 / 待重做错题</b>，每天自动出一道题；做完点「✓ 我会了」即视为打卡。也可与你的<b>课表挂件</b>联动提醒（需经本地服务器打开，详见记忆/说明）。</div>
+    <div id="dailyCard" class="daily-card"></div>
+  </div>
+
+  <!-- 帮助弹窗 -->
+  <div id="helpModal" class="modal hidden">
+    <div class="modal-card">
+      <h3>怎么用这个平台</h3>
+      <ol>
+        <li><b>载入课本</b>：点右上「载入课本PDF」，选你的扫描版 PDF；之后左侧可翻页浏览。</li>
+        <li><b>问题目</b>：点顶部「<b>答疑</b>」标签页直接问（首次在 ⚙ 设置里填你的 API Key，浏览器直连大模型，无需后端）；或回 LearnBuddy 对话说「P127 第5题不会」。讲解为教辅式分步（含正规公式）。</li>
+        <li><b>存入题库</b>：对话回答下方点「＋ 存到我的题库」，该题即进入「题目」列表，可搜索、可标记进度（存在本机浏览器）。</li>
+        <li><b>自动入库</b>：通过 LearnBuddy 对话讲解的题会被写进 <code>data/problems.json</code>，刷新本平台即可看到、可搜索。</li>
+        <li><b>考点</b>：把<b>考卷</b>发给 LearnBuddy，它读卷后给出文字版考点总结（高频/易错/分布），并沉淀到「考点」标签页；也可在「考点」页点「＋ 添加考卷」自己录入。</li>
+        <li><b>定位</b>：顶部搜索框输入「P127 第5题」直接跳转；输入章节/概念也能搜。</li>
+        <li><b>追踪</b>：每题可标记「已学会 / 已掌握 / 加入错题」，进度与连续学习天数自动记录。</li>
+        <li><b>引导模式</b>：在「答疑」里默认开启，连小理会一步步追问、不直接给答案；卡住了说「给我答案」即可要完整解。</li>
+        <li><b>薄弱点</b>：把错题标记为「加入错题」并填它对应的教材定理/定义，会在「薄弱点」标签页聚成你的个人图谱，可一键导出 JSON / CSV。</li>
+        <li><b>截图问</b>：在「答疑」里点 📎 或把截图直接粘贴到输入框，连小理会<b>看图解题</b>（比 OCR 识别更靠谱）。图片只存在本机浏览器。</li>
+        <li><b>答疑转笔记</b>：每条答疑回答下方有「📝 加入笔记」按钮，点一下就把整段回答（含附图）存进「笔记」标签页，自动跳过去，可继续补充老师的教案。</li>
+        <li><b>周报</b>：点顶部「<b>周报</b>」标签页，连小理会跨会话读取你全部答疑、错题归因与进度，自动汇总「本周学了哪几章 / 错题集中在哪些定理 / 进步在哪 / 下周攻哪」，可导出 Markdown。</li>
+        <li><b>上课笔记</b>：点顶部「<b>笔记</b>」标签页，自己记录老师的教案、板书和课堂照片，支持传图 / 粘贴，与题库/答疑数据一起存在本机浏览器。</li>
+      </ol>
+      <p class="muted">提示：PDF 仅在本机浏览器打开，不会上传；题目/考点数据存在本地浏览器与 workspace。</p>
+      <button id="closeHelp" class="primary">知道了</button>
+    </div>
+  </div>
+
+  <!-- 对话设置弹窗 -->
+  <div id="chatSettingsModal" class="modal hidden">
+    <div class="modal-card">
+      <h3>对话设置</h3>
+      <p class="muted">Key 只存在你本机浏览器，不会上传到任何服务器（网站是纯静态的）。</p>
+      <label class="cfg-label">接口地址 (Base URL)</label>
+      <input id="cfgBase" class="cfg-input" type="text" placeholder="https://api.deepseek.com/v1" />
+      <label class="cfg-label">API Key</label>
+      <input id="cfgKey" class="cfg-input" type="password" placeholder="sk-..." />
+      <label class="cfg-label">模型名</label>
+      <input id="cfgModel" class="cfg-input" type="text" placeholder="deepseek-chat" />
+      <div class="cfg-sep"></div>
+      <label class="cfg-label">视觉模型（看图专用，可选）</label>
+      <p class="muted" style="margin-top:-4px">遇到「截图提问 / P页码 发书页图」时自动改用此模型；留空则仍用上面的模型。需选带视觉能力的模型（如 <code>qwen-vl-max</code> / <code>glm-4v-plus</code> / <code>gpt-4o</code>）。</p>
+      <label class="cfg-label">视觉模型 接口地址</label>
+      <input id="cfgVisionBase" class="cfg-input" type="text" placeholder="留空则用上面的接口地址" />
+      <label class="cfg-label">视觉模型 API Key</label>
+      <input id="cfgVisionKey" class="cfg-input" type="password" placeholder="留空则用上面的 Key" />
+      <label class="cfg-label">视觉模型名</label>
+      <input id="cfgVisionModel" class="cfg-input" type="text" placeholder="如 qwen-vl-max" />
+      <p class="muted">支持 OpenAI 兼容接口：DeepSeek / OpenAI / 通义千问 / 智谱 / 本地 Ollama 等。若浏览器提示跨域(CORS)失败，可换支持 CORS 的接口或本地代理。</p>
+      <div class="modal-actions">
+        <button id="saveCfg" class="primary">保存</button>
+        <button id="closeCfg" class="ghost">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 添加书籍弹窗 -->
+  <div id="addBookModal" class="modal hidden">
+    <div class="modal-card">
+      <h3>添加书籍</h3>
+      <p class="muted">上传的 PDF 会存到你本机浏览器（IndexedDB），刷新不丢、不上传服务器。看完书页图靠实时渲染，不需要额外OCR。</p>
+      <label class="cfg-label">书名</label>
+      <input id="addBookTitle" class="cfg-input" type="text" placeholder="如：数学分析（第二册）" />
+      <label class="cfg-label">课本 PDF</label>
+      <input id="addBookFile" class="cfg-input" type="file" accept="application/pdf" />
+      <p class="muted" id="addBookInfo" style="margin-top:4px"></p>
+      <div class="modal-actions">
+        <button id="saveAddBook" class="primary">添加并打开</button>
+        <button id="closeAddBook" class="ghost">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 添加考卷弹窗 -->
+  <div id="addExamModal" class="modal hidden">
+    <div class="modal-card modal-wide">
+      <h3>添加考卷</h3>
+      <p class="muted">录入到「考点」库（存在本机浏览器）。上传考卷 PDF 后，详情页会以<b>原图</b>展示，并支持<b>针对考卷答疑</b>；也会自动提取原文作为备用。</p>
+      <label class="cfg-label">考卷标题</label>
+      <input id="examTitle" class="cfg-input" type="text" placeholder="如：2025 秋 期中模拟" />
+      <label class="cfg-label">上传考卷 PDF（将作为原图展示并支持答疑）</label>
+      <input id="examPdfFile" type="file" accept="application/pdf" />
+      <div id="examPdfInfo" class="muted" style="margin-top:4px"></div>
+      <label class="cfg-label">总体分析</label>
+      <textarea id="examSummary" class="cfg-input" rows="3" placeholder="高频考点、易错点、难度分布…（支持 $LaTeX$ 与 **加粗**）"></textarea>
+      <div class="cfg-label" style="display:flex;justify-content:space-between;align-items:center">
+        <span>考点列表</span>
+        <button id="addPointRow" class="ghost" type="button" style="padding:3px 10px">＋ 添加考点</button>
+      </div>
+      <div id="pointRows"></div>
+      <div class="modal-actions">
+        <button id="saveExam" class="primary">保存</button>
+        <button id="closeExam" class="ghost">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 错题归因弹窗 -->
+  <div id="attrModal" class="modal hidden">
+    <div class="modal-card modal-wide">
+      <h3>错题归因</h3>
+      <p class="muted">把错题归因到教材的<b>定理 / 定义</b>，系统会自动聚合成你的「薄弱点」图谱。也可以先直接标记为错题，再回来补归因。</p>
+      <input id="attrId" type="hidden" />
+      <input id="attrTheorem" type="hidden" />
+      <input id="attrChapter" type="hidden" />
+      <label class="cfg-label">① 错误类型（第 1 层）</label>
+      <div class="err-type-row" id="attrTypeRow"></div>
+      <label class="cfg-label">② 知识根因：教材知识点（第 2 层，逐级选择）</label>
+      <div class="kp-pick">
+        <select id="attrChapterSel" class="cfg-input"><option value="">— 章 —</option></select>
+        <select id="attrSectionSel" class="cfg-input"><option value="">— 节 —</option></select>
+        <select id="attrPointSel" class="cfg-input"><option value="">— 知识点 —</option></select>
+      </div>
+      <div class="kp-selected" id="attrPointLabel"></div>
+      <div class="legacy-hint hidden" id="attrLegacy"></div>
+      <label class="cfg-label">错因（一句话）</label>
+      <textarea id="attrNote" class="cfg-input" rows="2" placeholder="如：混淆了极限存在与函数值在该点有定义"></textarea>
+      <div id="attrTraceBox" class="hidden" style="margin-top:12px">
+        <details class="raw-box"><summary>📜 答疑留痕（AI 归因依据）</summary>
+        <div class="raw-text" id="attrTrace"></div></details>
+      </div>
+      <div id="attrAIStatus" class="muted" style="margin-top:8px;min-height:18px"></div>
+      <div class="modal-actions modal-actions-split">
+        <div class="action-group">
+          <button id="aiAttr" class="ghost">✨ AI 帮我归因</button>
+          <button id="markAttr" class="ghost">直接标记为错题</button>
+          <button id="removeAttr" class="ghost danger">移出错题</button>
+        </div>
+        <div class="action-group">
+          <button id="saveAttr" class="primary">保存并加入薄弱点</button>
+          <button id="closeAttr" class="ghost">取消</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 数据备份 / 迁移弹窗 -->
+  <div id="dataModal" class="modal hidden">
+    <div class="modal-card">
+      <h3>数据备份 / 迁移</h3>
+      <p class="muted">所有数据（聊天记录、我的题库、进度、考卷、错题归因、设置）都只存在<b>本机浏览器</b>，且按<b>网址</b>隔离。<br/>换网址（比如从云端链接切到本地快捷方式）或换浏览器都会看不到旧数据。用下面的功能可把数据导出成文件、再导入到另一个网址。</p>
+      <div class="data-actions">
+        <button id="exportDataBtn" class="data-btn data-btn-primary">⬇ 导出全部数据为文件</button>
+        <button id="importDataBtn" class="data-btn data-btn-secondary">⬆ 从文件导入</button>
+      </div>
+      <p id="dataStatus" class="muted" style="min-height:18px"></p>
+      <input type="file" id="importDataFile" accept="application/json" hidden />
+      <hr class="modal-sep" />
+      <h4>☁ 云同步（一个令牌，多设备共享）</h4>
+      <p class="muted">填一个同步令牌（字母/数字/下划线，自己记好），<b>电脑和平板用同一个令牌</b>打开同一个服务器网址，数据就互通了。冲突时以最后上传为准。</p>
+      <div class="sync-row">
+        <input id="syncBase" class="sync-input" placeholder="同步服务器根地址（留空=当前网址；填 https://xxxx.localhost.run 即可，无需带 /api/sync）" autocomplete="off" />
+        <button id="saveSyncBase" class="data-btn data-btn-secondary">保存地址</button>
+      </div>
+      <div class="sync-row">
+        <input id="syncToken" class="sync-input" placeholder="同步令牌，例如 my-study-2026" autocomplete="off" />
+        <button id="saveSyncToken" class="data-btn data-btn-secondary">保存令牌</button>
+      </div>
+      <div class="sync-row">
+        <label class="sync-check"><input type="checkbox" id="syncWithKey" /> 同步包含 API Key（取消勾选则云端不存你的密钥）</label>
+      </div>
+      <div class="sync-row">
+        <label class="sync-check"><input type="checkbox" id="syncAuto" /> 自动同步（后台每 90 秒检查，开机自动拉取最新）</label>
+      </div>
+      <div class="data-actions">
+        <button id="syncUploadBtn" class="data-btn data-btn-primary">☁ 上传到云（本地→云）</button>
+        <button id="syncDownloadBtn" class="data-btn data-btn-secondary">☁ 从云下载（云→本地）</button>
+      </div>
+      <p id="syncStatus" class="muted" style="min-height:18px"></p>
+      <p class="muted">同步服务器：<code id="syncBaseLabel"></code></p>
+      <div class="modal-actions">
+        <button id="closeData" class="ghost">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js?v=55"></script>
+</body>
+</html>

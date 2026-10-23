@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>笔记找回工具（同源）</title>
+<style>
+  body { font-family: system-ui, "Microsoft YaHei", sans-serif; margin: 0; padding: 24px; background: #f6f8fb; color: #1f2937; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #64748b; font-size: 13px; margin-bottom: 16px; }
+  .bar { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; font-size: 13px; line-height: 1.8; }
+  .bar code { background: #eef2ff; padding: 1px 6px; border-radius: 4px; }
+  button { font-size: 13px; padding: 5px 12px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; cursor: pointer; }
+  button.primary { background: #3b6cf6; color: #fff; border-color: #3b6cf6; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid #eef2f7; vertical-align: top; }
+  th { background: #f1f5f9; font-weight: 600; }
+  .orphan { color: #b45309; font-weight: 600; }
+  .ok { color: #15803d; }
+  .toolbar { margin: 12px 0; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .note { font-size: 12px; color: #64748b; margin-top: 8px; }
+  textarea { width: 100%; height: 120px; font-family: monospace; font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>📒 笔记找回工具</h1>
+  <div class="sub">这个页面和主程序共用同一个浏览器存储，能直接看到你的笔记到底存到了哪个「课本 id」下，并支持导出 / 合并找回。</div>
+
+  <div class="bar" id="envBar">正在读取当前环境…</div>
+
+  <div class="toolbar">
+    <button class="primary" id="refreshBtn">🔄 重新扫描</button>
+    <button id="exportAllBtn">⬇️ 全部导出 JSON</button>
+    <span id="bulkMsg" class="note"></span>
+  </div>
+
+  <table id="tbl">
+    <thead><tr><th>课本 id</th><th>课本标题</th><th>笔记数</th><th>大致体积</th><th>状态</th><th>操作</th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+
+  <div class="toolbar" style="margin-top:22px;border-top:1px dashed #cbd5e1;padding-top:14px;">
+    <label>孤儿笔记来源课本 id：
+      <select id="srcSel"></select>
+    </label>
+    <label>合并到目标课本 id：
+      <select id="dstSel"></select>
+    </label>
+    <button class="primary" id="mergeBtn">➡️ 合并（把来源笔记追加到目标课本）</button>
+    <span id="mergeMsg" class="note"></span>
+  </div>
+  <div class="note">合并后，回到主程序（Ctrl+F5 刷新）即可在该课本下看到这些笔记。目标课本如不存在于清单，可先在主程序里「＋课本」加上同名课本（其 id 会一致）。</div>
+
+<script>
+const NOTES_KEY = "study_notes_v1";
+const ACTIVE_BOOK_KEY = "active_book_v1";
+const BOOK_DB = "study_platform_books";
+const LEGACY = "shuxue1";
+
+function fmtBytes(n){ if(!n) return "0 B"; const u=["B","KB","MB"]; let i=0; while(n>=1024&&i<u.length-1){n/=1024;i++;} return n.toFixed(n<10&&i>0?1:0)+" "+u[i]; }
+function escapeHtml(s){ return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+
+function readNotes(){
+  try { const raw = localStorage.getItem(NOTES_KEY); const o = raw?JSON.parse(raw):{}; 
+    if (o && typeof o==="object" && !Array.isArray(o)) return o; } catch(e){}
+  return {};
+}
+async function getBooks(){
+  return await new Promise((resolve)=>{
+    let req;
+    try { req = indexedDB.open(BOOK_DB, 2); } catch(e){ return resolve([]); }
+    req.onupgradeneeded = (e)=>{ const db=e.target.result; if(!db.objectStoreNames.contains("books")) db.createObjectStore("books",{keyPath:"id"}); };
+    req.onsuccess = (e)=>{ const db=e.target.result; try { const tx=db.transaction("books","readonly"); const st=tx.objectStore("books"); const all=st.getAll(); all.onsuccess=()=>resolve(all.result||[]); all.onerror=()=>resolve([]); } catch(err){ resolve([]); } };
+    req.onerror = ()=>resolve([]);
+  });
+}
+
+let books = [], notesMap = {}, activeId = null;
+async function scan(){
+  notesMap = readNotes();
+  books = await getBooks();
+  activeId = localStorage.getItem(ACTIVE_BOOK_KEY) || LEGACY;
+  const bookTitles = {}; books.forEach(b=>bookTitles[b.id]=(b.title||b.id));
+
+  document.getElementById("envBar").innerHTML =
+    `当前存储来源：<code>${location.origin}</code>　|　当前主程序选中的课本 id：<code>${escapeHtml(activeId)}</code>　|　课本清单（IndexedDB）共 <b>${books.length}</b> 本`;
+
+  const tbody = document.getElementById("tbody");
+  const ids = Object.keys(notesMap);
+  if (!ids.length){ tbody.innerHTML = `<tr><td colspan="6" class="note">没有读取到任何笔记数据。</td></tr>`; }
+  else {
+    tbody.innerHTML = ids.map(bid=>{
+      const slice = notesMap[bid]||{};
+      const notes = Array.isArray(slice.notes)?slice.notes:[];
+      const size = new Blob([JSON.stringify(slice)]).size;
+      const known = bid===LEGACY || !!bookTitles[bid];
+      const status = known ? `<span class="ok">正常</span>` : `<span class="orphan">孤儿（清单无此课本）</span>`;
+      const title = bid===LEGACY ? "（默认/旧版课本）" : (bookTitles[bid]||"—");
+      return `<tr>
+        <td><code>${escapeHtml(bid)}</code></td>
+        <td>${escapeHtml(title)}</td>
+        <td>${notes.length}</td>
+        <td>${fmtBytes(size)}</td>
+        <td>${status}</td>
+        <td><button data-id="${escapeHtml(bid)}" class="exp">⬇️ 导出</button></td>
+      </tr>`;
+    }).join("");
+    tbody.querySelectorAll("button.exp").forEach(btn=>btn.onclick=()=>exportOne(btn.dataset.id));
+  }
+
+  // 填充合并下拉
+  const src = document.getElementById("srcSel"), dst = document.getElementById("dstSel");
+  const opts = ids.map(id=>`<option value="${escapeHtml(id)}">${escapeHtml(id)}（${ (notesMap[id]&&notesMap[id].notes||[]).length }条）</option>`).join("");
+  src.innerHTML = opts; dst.innerHTML = opts + `<option value="${escapeHtml(activeId)}">${escapeHtml(activeId)}（当前主程序选中）</option>`;
+  document.getElementById("mergeMsg").textContent=""; document.getElementById("bulkMsg").textContent="";
+}
+
+function download(name, obj){
+  const blob = new Blob([JSON.stringify(obj,null,2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function exportOne(bid){ const slice = notesMap[bid]||{}; download(`笔记_${bid}.json`, slice); }
+function exportAll(){ download("笔记_全部.json", notesMap); document.getElementById("bulkMsg").textContent="已导出全部笔记到 JSON 文件。"; }
+
+document.getElementById("refreshBtn").onclick = scan;
+document.getElementById("exportAllBtn").onclick = exportAll;
+document.getElementById("mergeBtn").onclick = ()=>{
+  const srcId = document.getElementById("srcSel").value;
+  const dstId = document.getElementById("dstSel").value;
+  if (!srcId || !dstId){ return; }
+  if (srcId===dstId){ document.getElementById("mergeMsg").textContent="来源和目标相同，无需合并。"; return; }
+  const srcNotes = (notesMap[srcId]&&notesMap[srcId].notes)||[];
+  if (!srcNotes.length){ document.getElementById("mergeMsg").textContent="来源没有笔记。"; return; }
+  if (!notesMap[dstId]) notesMap[dstId] = { notes: [], activeId: null };
+  let n=0;
+  srcNotes.forEach(nt=>{
+    const copy = JSON.parse(JSON.stringify(nt));
+    copy.id = "note-"+Date.now()+"-"+Math.random().toString(36).slice(2,7);
+    notesMap[dstId].notes.unshift(copy); n++;
+  });
+  try { localStorage.setItem(NOTES_KEY, JSON.stringify(notesMap)); document.getElementById("mergeMsg").textContent=`已把 ${n} 条笔记合并到「${dstId}」，请回主程序 Ctrl+F5 刷新查看。`; }
+  catch(e){ document.getElementById("mergeMsg").textContent="保存失败："+e.message; }
+};
+
+scan();
+</script>
+</body>
+</html>

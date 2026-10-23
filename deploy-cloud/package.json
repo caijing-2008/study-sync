@@ -1,0 +1,13 @@
+{
+  "name": "study-platform-sync",
+  "version": "1.0.0",
+  "description": "课本学习交互平台 - 零依赖云同步服务器（托管前端 + /api/sync 同步 API）",
+  "main": "sync-server.js",
+  "scripts": {
+    "start": "node sync-server.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "private": true
+}

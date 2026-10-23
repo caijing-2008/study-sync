@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "book": "示例课本（替换为你的课本）",
+    "note": "这是示例数据（公式已用 LaTeX，教辅式「解：」排版）。你在 LearnBuddy 对话里问的每道题，会被真实讲解追加到这里。"
+  },
+  "problems": [
+    {
+      "id": "P10-1",
+      "page": 10,
+      "number": 1,
+      "concept": "极限计算（重要极限）",
+      "question": "求 $\\lim\\limits_{x\\to 0}\\dfrac{\\sin x}{x}$。",
+      "explanation": [
+        "这是微积分第一个重要极限，务必记牢标准形式。",
+        "**方法一（洛必达）**：分子分母在 $x\\to 0$ 时都趋于 $0$，对分子分母分别求导得 $\\dfrac{\\cos x}{1}$，代入 $x=0$ 得 $1$。",
+        "**方法二（重要极限）**：直接套用 $\\lim\\limits_{x\\to 0}\\dfrac{\\sin x}{x}=1$。"
+      ],
+      "variations": [
+        {
+          "prompt": "变式1：求 $\\lim\\limits_{x\\to 0}\\dfrac{\\tan x}{x}$。",
+          "hint": "$\\tan x=\\dfrac{\\sin x}{\\cos x}$，拆成 $\\dfrac{\\sin x}{x}\\cdot\\dfrac{1}{\\cos x}$ 两个因子相乘。"
+        },
+        {
+          "prompt": "变式2：求 $\\lim\\limits_{x\\to 0}\\dfrac{1-\\cos x}{x^2}$。",
+          "hint": "用 $1-\\cos x=2\\sin^2\\dfrac{x}{2}$，化为 $2\\left(\\dfrac{\\sin(x/2)}{x/2}\\right)^2\\cdot\\dfrac14$。"
+        },
+        {
+          "prompt": "变式3：求 $\\lim\\limits_{x\\to 0}\\dfrac{\\sin 3x}{x}$。",
+          "hint": "令 $t=3x$，化为 $3\\cdot\\dfrac{\\sin t}{t}$。"
+        }
+      ],
+      "easyMistakes": "不要直接把 $\\sin x$ 和 $x$ 当等价无穷小“约掉”就完事——要说明依据（重要极限或等价无穷小替换）。"
+    }
+  ]
+}
